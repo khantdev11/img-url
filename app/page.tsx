@@ -8,21 +8,22 @@ export default function ImageUpload() {
   const [history, setHistory] = useState<{ name: string, url: string }[]>([]);
   const [customName, setCustomName] = useState('');
   const [preview, setPreview] = useState<string | null>(null);
-  const [notification, setNotification] = useState<string | null>(null); // Notification state
+  const [notification, setNotification] = useState<string | null>(null);
+  const [isClient, setIsClient] = useState(false); // Client-side ရောက်မှသာ run ဖို့
 
-  // Notification ပြသရန် function
+  useEffect(() => {
+    setIsClient(true);
+    const saved = localStorage.getItem('upload-history');
+    if (saved) setHistory(JSON.parse(saved));
+  }, []);
+
   const showNotification = (msg: string) => {
     setNotification(msg);
     setTimeout(() => setNotification(null), 3000);
   };
 
-  useEffect(() => {
-    const saved = localStorage.getItem('upload-history');
-    if (saved) setHistory(JSON.parse(saved));
-  }, []);
-
   const uploadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!customName) return showNotification("enter your link name!");
+    if (!customName) return showNotification("⚠️ Enter your link name!");
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -36,20 +37,28 @@ export default function ImageUpload() {
       const { data } = supabase.storage.from('profile-photos').getPublicUrl(fileName);
       const newEntry = { name: customName, url: data.publicUrl };
       const updatedHistory = [newEntry, ...history];
+
       setHistory(updatedHistory);
       localStorage.setItem('upload-history', JSON.stringify(updatedHistory));
       setCustomName('');
       setPreview(null);
-      showNotification("successfully upload!");
+      showNotification("✅ Successfully uploaded!");
     } else {
       showNotification("❌ Error: " + error.message);
     }
     setUploading(false);
   };
 
+  const deleteItem = (index: number) => {
+    const updated = history.filter((_, i) => i !== index);
+    setHistory(updated);
+    localStorage.setItem('upload-history', JSON.stringify(updated));
+  };
+
+  if (!isClient) return null; // Hydration error မဖြစ်အောင် ပထမဆုံးမှာ null ပြန်ပေးပါ
+
   return (
     <div className="upload-section">
-      {/* In-app Notification */}
       <AnimatePresence>
         {notification && (
           <motion.div
@@ -70,26 +79,18 @@ export default function ImageUpload() {
         {uploading ? 'Uploading...' : 'Select & Upload'}
       </label>
 
-      {/* Preview Section */}
-      <AnimatePresence>
-        {preview && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ marginTop: '20px' }}>
-            <img src={preview} alt="Preview" style={{ width: '120px', height: '120px', borderRadius: '15px', objectFit: 'cover', margin: '10px auto', border: '2px solid white' }} />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {preview && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ marginTop: '20px' }}>
+          <img src={preview} alt="Preview" style={{ width: '120px', height: '120px', borderRadius: '15px', objectFit: 'cover', margin: '10px auto', border: '2px solid white' }} />
+        </motion.div>
+      )}
 
-      {/* Grid Gallery Section */}
       <div className="gallery-grid">
         <AnimatePresence>
           {history.map((item, index) => (
             <motion.div key={item.url} initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }} className="gallery-item">
-              <img src={item.url} alt={item.name} onClick={() => { navigator.clipboard.writeText(item.url); showNotification("Copied Link!"); }} />
-              <button className="delete-btn" onClick={() => {
-                const updated = history.filter((_, i) => i !== index);
-                setHistory(updated);
-                localStorage.setItem('upload-history', JSON.stringify(updated));
-              }}>
+              <img src={item.url} alt={item.name} onClick={() => { navigator.clipboard.writeText(item.url); showNotification("📋 Copied Link!"); }} />
+              <button className="delete-btn" onClick={() => deleteItem(index)}>
                 <i className="fa-solid fa-trash"></i>
               </button>
             </motion.div>
