@@ -1,65 +1,101 @@
-import Image from "next/image";
+'use client';
+import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { supabase } from './lib/supabaseClient';
 
-export default function Home() {
+export default function ImageUpload() {
+  const [uploading, setUploading] = useState(false);
+  const [history, setHistory] = useState<{ name: string, url: string }[]>([]);
+  const [customName, setCustomName] = useState('');
+  const [preview, setPreview] = useState<string | null>(null);
+  const [notification, setNotification] = useState<string | null>(null); // Notification state
+
+  // Notification ပြသရန် function
+  const showNotification = (msg: string) => {
+    setNotification(msg);
+    setTimeout(() => setNotification(null), 3000);
+  };
+
+  useEffect(() => {
+    const saved = localStorage.getItem('upload-history');
+    if (saved) setHistory(JSON.parse(saved));
+  }, []);
+
+  const uploadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!customName) return showNotification("enter your link name!");
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setPreview(URL.createObjectURL(file));
+    setUploading(true);
+
+    const fileName = `${customName.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}.png`;
+    const { error } = await supabase.storage.from('profile-photos').upload(fileName, file);
+
+    if (!error) {
+      const { data } = supabase.storage.from('profile-photos').getPublicUrl(fileName);
+      const newEntry = { name: customName, url: data.publicUrl };
+      const updatedHistory = [newEntry, ...history];
+      setHistory(updatedHistory);
+      localStorage.setItem('upload-history', JSON.stringify(updatedHistory));
+      setCustomName('');
+      setPreview(null);
+      showNotification("successfully upload!");
+    } else {
+      showNotification("❌ Error: " + error.message);
+    }
+    setUploading(false);
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+    <div className="upload-section">
+      {/* In-app Notification */}
+      <AnimatePresence>
+        {notification && (
+          <motion.div
+            initial={{ opacity: 0, y: -50 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -50 }}
+            className="toast-notification"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+            {notification}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <h1 style={{ fontSize: '2.5rem', marginBottom: '20px' }}>Gallery Vault</h1>
+
+      <input placeholder="Enter file name..." value={customName} onChange={(e) => setCustomName(e.target.value)} className="custom-input" />
+
+      <label className="upload-btn">
+        <input type="file" onChange={uploadFile} disabled={uploading || !customName} style={{ display: 'none' }} />
+        {uploading ? 'Uploading...' : 'Select & Upload'}
+      </label>
+
+      {/* Preview Section */}
+      <AnimatePresence>
+        {preview && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ marginTop: '20px' }}>
+            <img src={preview} alt="Preview" style={{ width: '120px', height: '120px', borderRadius: '15px', objectFit: 'cover', margin: '10px auto', border: '2px solid white' }} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Grid Gallery Section */}
+      <div className="gallery-grid">
+        <AnimatePresence>
+          {history.map((item, index) => (
+            <motion.div key={item.url} initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }} className="gallery-item">
+              <img src={item.url} alt={item.name} onClick={() => { navigator.clipboard.writeText(item.url); showNotification("Copied Link!"); }} />
+              <button className="delete-btn" onClick={() => {
+                const updated = history.filter((_, i) => i !== index);
+                setHistory(updated);
+                localStorage.setItem('upload-history', JSON.stringify(updated));
+              }}>
+                <i className="fa-solid fa-trash"></i>
+              </button>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }
