@@ -9,7 +9,7 @@ export default function ImageUpload() {
   const [customName, setCustomName] = useState('');
   const [preview, setPreview] = useState<string | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
-  const [isClient, setIsClient] = useState(false); // Client-side ရောက်မှသာ run ဖို့
+  const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
     setIsClient(true);
@@ -22,8 +22,15 @@ export default function ImageUpload() {
     setTimeout(() => setNotification(null), 3000);
   };
 
+  // Copy လုပ်တဲ့ Function
+  const copyToClipboard = (text: string) => {
+    const fullLink = `${window.location.origin}/${text}`;
+    navigator.clipboard.writeText(fullLink);
+    showNotification("📋 Link copied to clipboard!");
+  };
+
   const uploadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!customName) return showNotification("⚠️ Enter your link name!");
+    if (!customName) return showNotification(" Enter a unique link name!");
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -31,20 +38,30 @@ export default function ImageUpload() {
     setUploading(true);
 
     const fileName = `${customName.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}.png`;
-    const { error } = await supabase.storage.from('profile-photos').upload(fileName, file);
+    const { error: uploadError } = await supabase.storage.from('profile-photos').upload(fileName, file);
 
-    if (!error) {
-      const { data } = supabase.storage.from('profile-photos').getPublicUrl(fileName);
+    if (uploadError) {
+      showNotification(" Error: " + uploadError.message);
+      setUploading(false);
+      return;
+    }
+
+    const { data } = supabase.storage.from('profile-photos').getPublicUrl(fileName);
+    const { error: dbError } = await supabase.from('links').insert([
+      { slug: customName, original_url: data.publicUrl }
+    ]);
+
+    if (dbError) {
+      showNotification(" This name is already taken!");
+    } else {
       const newEntry = { name: customName, url: data.publicUrl };
       const updatedHistory = [newEntry, ...history];
-
       setHistory(updatedHistory);
       localStorage.setItem('upload-history', JSON.stringify(updatedHistory));
+
+      showNotification(" Uploaded! Click to copy.");
       setCustomName('');
       setPreview(null);
-      showNotification("✅ Successfully uploaded!");
-    } else {
-      showNotification("❌ Error: " + error.message);
     }
     setUploading(false);
   };
@@ -55,47 +72,42 @@ export default function ImageUpload() {
     localStorage.setItem('upload-history', JSON.stringify(updated));
   };
 
-  if (!isClient) return null; // Hydration error မဖြစ်အောင် ပထမဆုံးမှာ null ပြန်ပေးပါ
+  if (!isClient) return null;
 
   return (
     <div className="upload-section">
       <AnimatePresence>
         {notification && (
-          <motion.div
-            initial={{ opacity: 0, y: -50 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -50 }}
-            className="toast-notification"
-          >
+          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="toast-notification">
             {notification}
           </motion.div>
         )}
       </AnimatePresence>
 
-      <h1 style={{ fontSize: '2.5rem', marginBottom: '20px' }}>Gallery Vault</h1>
-
-      <input placeholder="Enter file name..." value={customName} onChange={(e) => setCustomName(e.target.value)} className="custom-input" />
+      <h1>Gallery Vault</h1>
+      <input placeholder="Enter custom name..." value={customName} onChange={(e) => setCustomName(e.target.value)} className="custom-input" />
 
       <label className="upload-btn">
-        <input type="file" onChange={uploadFile} disabled={uploading || !customName} style={{ display: 'none' }} />
+        <input type="file" onChange={uploadFile} disabled={uploading} style={{ display: 'none' }} />
         {uploading ? 'Uploading...' : 'Select & Upload'}
       </label>
 
-      {preview && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ marginTop: '20px' }}>
-          <img src={preview} alt="Preview" style={{ width: '120px', height: '120px', borderRadius: '15px', objectFit: 'cover', margin: '10px auto', border: '2px solid white' }} />
-        </motion.div>
-      )}
-
       <div className="gallery-grid">
-        <AnimatePresence>
-          {history.map((item, index) => (
-            <motion.div key={item.url} initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }} className="gallery-item">
-              <img src={item.url} alt={item.name} onClick={() => { navigator.clipboard.writeText(item.url); showNotification("📋 Copied Link!"); }} />
-              <button className="delete-btn" onClick={() => deleteItem(index)}>
-                <i className="fa-solid fa-trash"></i>
-              </button>
-            </motion.div>
-          ))}
-        </AnimatePresence>
+        {history.map((item, index) => (
+          <motion.div key={item.url} className="gallery-item">
+            {/* ပုံကို နှိပ်ရင် copy ဖြစ်မယ် */}
+            <img
+              src={item.url}
+              alt={item.name}
+              onClick={() => copyToClipboard(item.name)}
+              style={{ cursor: 'pointer' }}
+            />
+            <p onClick={() => copyToClipboard(item.name)} style={{ cursor: 'pointer' }}>
+              /{item.name}
+            </p>
+            <button className="delete-btn" onClick={() => deleteItem(index)}>➖</button>
+          </motion.div>
+        ))}
       </div>
     </div>
   );
